@@ -1,22 +1,21 @@
 # madd_animation
 
-Pixel ambient FHD loops — grayscale, **square pixels**, seamless 2.5s previews.
+Pixel ambient FHD loops — grayscale, **square pixels**, seamless previews.
 
 ## Live
 
 https://checkmategs.github.io/madd_animation/
 
+## Controls
+
+- Pick a variant
+- Set **Speed** (0.5×–2×) — updates the live preview
+- **Download GIF** / **Download MP4** — encoded at the selected speed
+
 ## Local
 
 ```bash
 python3 -m http.server 8770
-# http://localhost:8770
-
-node render.mjs           # rebuild MP4 (+ GIF locally)
-node check-loops.mjs      # assert t=0 ≡ t=1
+node render.mjs
+node check-loops.mjs
 ```
-
-## Download
-
-- **Download MP4** — pre-rendered FHD file from `out/`
-- **Download GIF** — encoded in the browser from the same engine (seamless loop)

@@ -4,3 +4,5 @@ frames/
 node_modules/
 *_preview.jpg
 out/*.gif
+vendor/gifenc/dist/*.map
+vendor/gifenc/src/
