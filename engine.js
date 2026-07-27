@@ -11,6 +11,12 @@ export const FRAME_COUNT = Math.round(FPS * DURATION);
 
 export const VARIANT_IDS = [
   'dust',
+  'sheen',
+  'grain',
+  'fabric',
+  'fog',
+  'plaid',
+  'ember',
   'drift',
   'lattice',
   'orbit',
@@ -39,12 +45,6 @@ export const VARIANT_IDS = [
   'mosaic',
   'diamond',
   'swarm',
-  'sheen',
-  'fabric',
-  'fog',
-  'plaid',
-  'grain',
-  'ember',
 ];
 
 export const VARIANT_META = {
