@@ -29,13 +29,13 @@
         display: grid;
         place-items: center;
         background: #000;
-        padding-bottom: 120px;
+        padding-bottom: 140px;
       }
       canvas {
-        width: min(100vw - 16px, calc((100vh - 140px) * 16 / 9));
+        width: min(100vw - 16px, calc((100vh - 160px) * 16 / 9));
         aspect-ratio: 16 / 9;
         height: auto;
-        max-height: calc(100vh - 140px);
+        max-height: calc(100vh - 160px);
         image-rendering: pixelated;
         image-rendering: crisp-edges;
         background: #000;
@@ -52,7 +52,7 @@
         padding: 12px 16px;
         background: linear-gradient(transparent, rgba(0, 0, 0, 0.92));
         border-top: 1px solid var(--line);
-        max-height: 42%;
+        max-height: 46%;
         overflow: auto;
       }
       .bar .meta {
@@ -61,12 +61,39 @@
         margin-bottom: 4px;
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 10px;
         align-items: center;
         justify-content: space-between;
       }
       .bar .blurb {
         opacity: 0.7;
+        flex: 1 1 160px;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .speed {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #2a2a2a;
+        background: #0c0c0c;
+        padding: 6px 10px;
+      }
+      .speed label {
+        opacity: 0.7;
+        white-space: nowrap;
+      }
+      .speed input[type="range"] {
+        width: 110px;
+        accent-color: #888;
+      }
+      .speed .val {
+        min-width: 2.6em;
+        color: var(--hi);
       }
       .downloads {
         display: flex;
@@ -92,8 +119,7 @@
         color: var(--hi);
         background: #181818;
       }
-      button:disabled,
-      a.btn.is-busy {
+      button:disabled {
         opacity: 0.5;
         pointer-events: none;
       }
@@ -119,6 +145,12 @@
         gridToRgb,
         upscaleNearest,
       } from "./engine.js";
+      import { GIFEncoder } from "./vendor/gifenc/dist/gifenc.esm.js";
+
+      const SPEED_MIN = 0.5;
+      const SPEED_MAX = 2;
+      const SPEED_STEP = 0.25;
+      const GRAY_LEVELS = 48;
 
       const canvas = document.getElementById("c");
       const ctx = canvas.getContext("2d", { alpha: false });
@@ -126,28 +158,50 @@
       const grid = new Float32Array(GRID_W * GRID_H);
       const rgb = new Uint8ClampedArray(GRID_W * GRID_H * 3);
 
-      let variant =
-        new URLSearchParams(location.search).get("v") || VARIANT_IDS[0];
+      const params = new URLSearchParams(location.search);
+      let variant = params.get("v") || VARIANT_IDS[0];
       if (!VARIANT_IDS.includes(variant)) variant = VARIANT_IDS[0];
+      let speed = Number(params.get("speed") || 1);
+      if (!Number.isFinite(speed)) speed = 1;
+      speed = Math.min(SPEED_MAX, Math.max(SPEED_MIN, speed));
 
       const bar = document.getElementById("bar");
       const meta = document.createElement("div");
       meta.className = "meta";
       const blurb = document.createElement("span");
       blurb.className = "blurb";
+
+      const controls = document.createElement("div");
+      controls.className = "controls";
+
+      const speedBox = document.createElement("div");
+      speedBox.className = "speed";
+      const speedLabel = document.createElement("label");
+      speedLabel.textContent = "Speed";
+      speedLabel.htmlFor = "speed";
+      const speedInput = document.createElement("input");
+      speedInput.id = "speed";
+      speedInput.type = "range";
+      speedInput.min = String(SPEED_MIN);
+      speedInput.max = String(SPEED_MAX);
+      speedInput.step = String(SPEED_STEP);
+      speedInput.value = String(speed);
+      const speedVal = document.createElement("span");
+      speedVal.className = "val";
+      speedBox.append(speedLabel, speedInput, speedVal);
+
       const downloads = document.createElement("div");
       downloads.className = "downloads";
-
       const gifBtn = document.createElement("button");
       gifBtn.type = "button";
       gifBtn.textContent = "Download GIF";
-      const mp4Btn = document.createElement("a");
-      mp4Btn.className = "btn";
+      const mp4Btn = document.createElement("button");
+      mp4Btn.type = "button";
       mp4Btn.textContent = "Download MP4";
-      mp4Btn.setAttribute("download", "");
-
       downloads.append(gifBtn, mp4Btn);
-      meta.append(blurb, downloads);
+
+      controls.append(speedBox, downloads);
+      meta.append(blurb, controls);
       bar.appendChild(meta);
 
       for (const id of VARIANT_IDS) {
@@ -156,10 +210,17 @@
         b.dataset.id = id;
         b.addEventListener("click", () => {
           variant = id;
-          history.replaceState(null, "", `?v=${id}`);
+          syncUrl();
           syncButtons();
         });
         bar.appendChild(b);
+      }
+
+      function syncUrl() {
+        const q = new URLSearchParams();
+        q.set("v", variant);
+        if (speed !== 1) q.set("speed", String(speed));
+        history.replaceState(null, "", `?${q}`);
       }
 
       function syncButtons() {
@@ -167,76 +228,160 @@
           b.classList.toggle("active", b.dataset.id === variant);
         }
         blurb.textContent = VARIANT_META[variant].blurb;
-        mp4Btn.href = `./out/${variant}.mp4`;
-        mp4Btn.download = `${variant}.mp4`;
+        speedVal.textContent = `${speed.toFixed(2).replace(/\.00$/, "")}×`;
       }
       syncButtons();
+
+      speedInput.addEventListener("input", () => {
+        speed = Number(speedInput.value);
+        syncUrl();
+        syncButtons();
+      });
 
       function saveBlob(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
         a.download = filename;
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      }
+
+      /** Fixed grayscale palette — animations are mono, no quantize needed. */
+      function grayPalette() {
+        const palette = [];
+        for (let i = 0; i < GRAY_LEVELS; i++) {
+          const v = Math.round((i / (GRAY_LEVELS - 1)) * 255);
+          palette.push([v, v, v]);
+        }
+        return palette;
+      }
+
+      function rgbaToGrayIndex(rgba, index) {
+        const max = GRAY_LEVELS - 1;
+        for (let i = 0, p = 0; i < index.length; i++, p += 4) {
+          index[i] = Math.round((rgba[p] / 255) * max);
+        }
+      }
+
+      function paintToCanvas(tNorm) {
+        paintFrame(variant, grid, tNorm);
+        gridToRgb(grid, rgb);
+        upscaleNearest(rgb, img.data);
+        ctx.putImageData(img, 0, 0);
       }
 
       gifBtn.addEventListener("click", async () => {
         gifBtn.disabled = true;
+        mp4Btn.disabled = true;
         const prev = gifBtn.textContent;
-        gifBtn.textContent = "Encoding GIF…";
         try {
-          const { GIFEncoder, quantize, applyPalette } = await import(
-            "https://esm.sh/gifenc@1.0.3"
-          );
           const gif = GIFEncoder();
-          const delay = Math.round(1000 / FPS);
+          const delay = Math.max(20, Math.round(1000 / (FPS * speed)));
+          const palette = grayPalette();
           const g = new Float32Array(GRID_W * GRID_H);
           const low = new Uint8ClampedArray(GRID_W * GRID_H * 3);
           const rgba = new Uint8ClampedArray(OUT_W * OUT_H * 4);
+          const index = new Uint8Array(OUT_W * OUT_H);
 
           for (let i = 0; i < FRAME_COUNT; i++) {
             paintFrame(variant, g, i / FRAME_COUNT);
             gridToRgb(g, low);
             upscaleNearest(low, rgba);
-            // gifenc expects flat RGB(A) — strip alpha channel copy
-            const rgbFlat = new Uint8Array(OUT_W * OUT_H * 3);
-            for (let p = 0, q = 0; p < rgba.length; p += 4, q += 3) {
-              rgbFlat[q] = rgba[p];
-              rgbFlat[q + 1] = rgba[p + 1];
-              rgbFlat[q + 2] = rgba[p + 2];
-            }
-            const palette = quantize(rgbFlat, 48);
-            const index = applyPalette(rgbFlat, palette);
+            rgbaToGrayIndex(rgba, index);
             gif.writeFrame(index, OUT_W, OUT_H, {
-              palette,
+              palette: i === 0 ? palette : undefined,
               delay,
               repeat: 0,
             });
-            gifBtn.textContent = `Encoding GIF… ${i + 1}/${FRAME_COUNT}`;
+            gifBtn.textContent = `GIF ${i + 1}/${FRAME_COUNT}`;
             await new Promise((r) => setTimeout(r, 0));
           }
           gif.finish();
           saveBlob(
             new Blob([gif.bytes()], { type: "image/gif" }),
-            `${variant}.gif`
+            `${variant}_${speed}x.gif`
           );
         } catch (err) {
           console.error(err);
-          blurb.textContent = `GIF encode failed: ${err.message || err}`;
+          blurb.textContent = `GIF failed: ${err.message || err}`;
         } finally {
           gifBtn.disabled = false;
+          mp4Btn.disabled = false;
           gifBtn.textContent = prev;
+        }
+      });
+
+      function pickRecorderMime() {
+        const candidates = [
+          "video/mp4",
+          "video/webm;codecs=vp9",
+          "video/webm;codecs=vp8",
+          "video/webm",
+        ];
+        for (const m of candidates) {
+          if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+        }
+        return "";
+      }
+
+      mp4Btn.addEventListener("click", async () => {
+        const mime = pickRecorderMime();
+        if (!mime) {
+          blurb.textContent = "Video encode not supported in this browser";
+          return;
+        }
+        gifBtn.disabled = true;
+        mp4Btn.disabled = true;
+        const prev = mp4Btn.textContent;
+        mp4Btn.textContent = "Recording…";
+        try {
+          const stream = canvas.captureStream(0);
+          const track = stream.getVideoTracks()[0];
+          const chunks = [];
+          const recorder = new MediaRecorder(stream, {
+            mimeType: mime,
+            videoBitsPerSecond: 8_000_000,
+          });
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size) chunks.push(e.data);
+          };
+          const done = new Promise((resolve, reject) => {
+            recorder.onstop = resolve;
+            recorder.onerror = () => reject(recorder.error || new Error("record failed"));
+          });
+          recorder.start();
+          const frameDelay = 1000 / (FPS * speed);
+          for (let i = 0; i < FRAME_COUNT; i++) {
+            paintToCanvas(i / FRAME_COUNT);
+            if (track.requestFrame) track.requestFrame();
+            mp4Btn.textContent = `Video ${i + 1}/${FRAME_COUNT}`;
+            await new Promise((r) => setTimeout(r, frameDelay));
+          }
+          recorder.stop();
+          await done;
+          stream.getTracks().forEach((t) => t.stop());
+          const ext = mime.includes("mp4") ? "mp4" : "webm";
+          saveBlob(
+            new Blob(chunks, { type: mime }),
+            `${variant}_${speed}x.${ext}`
+          );
+        } catch (err) {
+          console.error(err);
+          blurb.textContent = `Video failed: ${err.message || err}`;
+        } finally {
+          gifBtn.disabled = false;
+          mp4Btn.disabled = false;
+          mp4Btn.textContent = prev;
         }
       });
 
       const t0 = performance.now();
       function frame(now) {
-        const tNorm = ((now - t0) / 1000 / DURATION) % 1;
-        paintFrame(variant, grid, tNorm);
-        gridToRgb(grid, rgb);
-        upscaleNearest(rgb, img.data);
-        ctx.putImageData(img, 0, 0);
+        const tNorm = (((now - t0) / 1000) * speed) / DURATION;
+        paintToCanvas(((tNorm % 1) + 1) % 1);
         requestAnimationFrame(frame);
       }
       requestAnimationFrame(frame);

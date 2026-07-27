@@ -33,6 +33,12 @@ export const VARIANT_IDS = [
   'pistons',
   'ripple',
   'tide',
+  'checker',
+  'zipper',
+  'beacon',
+  'mosaic',
+  'diamond',
+  'swarm',
 ];
 
 export const VARIANT_META = {
@@ -59,6 +65,12 @@ export const VARIANT_META = {
   pistons: { title: 'Pistons', blurb: 'Dense block grid — depth wave' },
   ripple: { title: 'Ripple', blurb: 'Radial height ripple on blocks' },
   tide: { title: 'Tide', blurb: 'Horizontal tide of block heights' },
+  checker: { title: 'Checker', blurb: 'Flipping checkerboard field' },
+  zipper: { title: 'Zipper', blurb: 'Alternating row slides' },
+  beacon: { title: 'Beacon', blurb: 'Rotating lighthouse sweep' },
+  mosaic: { title: 'Mosaic', blurb: 'Tiled blocks with phased flash' },
+  diamond: { title: 'Diamond', blurb: 'Expanding diamond rings' },
+  swarm: { title: 'Swarm', blurb: 'Packed pixel flocks wrapping' },
 };
 
 /** Mulberry32 */
@@ -800,7 +812,146 @@ export function paintFrame(variant, grid, tNorm) {
     return;
   }
 
+  if (variant === 'checker') {
+    for (let y = 0; y < GRID_H; y++) {
+      for (let x = 0; x < GRID_W; x++) {
+        const cell = ((x >> 1) + (y >> 1)) & 1;
+        const phase = ((x >> 1) * 0.07 + (y >> 1) * 0.11) % 1;
+        const flip = 0.5 + 0.5 * Math.sin(twoPi * (t + phase + (cell ? 0.5 : 0)));
+        if (flip < 0.42) continue;
+        const bri = clamp01(0.2 + 0.7 * flip) * cornerBias(x, y);
+        setMax(grid, x, y, bri);
+      }
+    }
+    return;
+  }
+
+  if (variant === 'zipper') {
+    for (let y = 0; y < GRID_H; y++) {
+      const dir = y % 2 === 0 ? 1 : -1;
+      const shift = t * GRID_W * dir;
+      for (let i = 0; i < 14; i++) {
+        const x = Math.floor(wrap(i * 7 + y * 3 + shift, GRID_W));
+        const pulse = 0.5 + 0.5 * Math.sin(twoPi * (t + i * 0.08 + y * 0.03));
+        if (pulse < 0.35) continue;
+        setMax(grid, x, y, clamp01(0.35 + 0.55 * pulse) * cornerBias(x, y));
+        setMax(grid, wrap(x + 1, GRID_W), y, clamp01(0.2 * pulse));
+      }
+    }
+    return;
+  }
+
+  if (variant === 'beacon') {
+    const ang = twoPi * t;
+    const beamW = 0.12;
+    for (let y = 0; y < GRID_H; y++) {
+      for (let x = 0; x < GRID_W; x++) {
+        const dx = x - cx;
+        const dy = (y - cy) / 0.75;
+        const a = Math.atan2(dy, dx);
+        let d = Math.abs(((a - ang + Math.PI) % twoPi) - Math.PI);
+        d = Math.min(d, twoPi - d);
+        if (d > beamW) continue;
+        const fall = 1 - d / beamW;
+        const r = Math.hypot(dx, dy);
+        const bri = clamp01(fall * (0.35 + 0.55 * (1 - r / 55)));
+        setMax(grid, x, y, bri);
+      }
+    }
+    setMax(grid, Math.floor(cx), Math.floor(cy), 0.9);
+    setMax(grid, Math.floor(cx) + 1, Math.floor(cy), 0.55);
+    setMax(grid, Math.floor(cx), Math.floor(cy) + 1, 0.55);
+    return;
+  }
+
+  if (variant === 'mosaic') {
+    const tile = 4;
+    const cols = Math.ceil(GRID_W / tile);
+    const rows = Math.ceil(GRID_H / tile);
+    for (let ty = 0; ty < rows; ty++) {
+      for (let tx = 0; tx < cols; tx++) {
+        const phase = ((tx * 0.17 + ty * 0.23) % 1);
+        const on = 0.5 + 0.5 * Math.sin(twoPi * (t + phase));
+        if (on < 0.55) continue;
+        const bri = clamp01(0.25 + 0.65 * on);
+        const x0 = tx * tile;
+        const y0 = ty * tile;
+        for (let ly = 0; ly < tile - 1; ly++) {
+          for (let lx = 0; lx < tile - 1; lx++) {
+            setMax(grid, x0 + lx, y0 + ly, bri * cornerBias(x0 + lx, y0 + ly));
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  if (variant === 'diamond') {
+    const maxR = 40;
+    for (let k = 0; k < 4; k++) {
+      const r = wrap(t * maxR + k * (maxR / 4), maxR);
+      const bri = clamp01(0.9 * (1 - r / maxR) + 0.12);
+      for (let i = -Math.ceil(r); i <= Math.ceil(r); i++) {
+        const j = Math.round(r - Math.abs(i));
+        const points = [
+          [cx + i, cy + j * 0.65],
+          [cx + i, cy - j * 0.65],
+        ];
+        for (const [px, py] of points) {
+          setMax(grid, Math.round(px), Math.round(py), bri);
+        }
+      }
+    }
+    setMax(grid, Math.floor(cx), Math.floor(cy), 0.45 + 0.3 * Math.sin(twoPi * t));
+    return;
+  }
+
+  if (variant === 'swarm') {
+    const flocks = getSwarm();
+    for (const f of flocks) {
+      const ox = wrap(f.x + t * f.revsX * GRID_W, GRID_W);
+      const oy = wrap(f.y + t * f.revsY * GRID_H, GRID_H);
+      for (const p of f.members) {
+        const x = Math.floor(wrap(ox + p.dx + Math.sin(twoPi * (t + p.phase)) * p.wobble, GRID_W));
+        const y = Math.floor(wrap(oy + p.dy + Math.cos(twoPi * (t + p.phase)) * p.wobble, GRID_H));
+        const flick = 0.55 + 0.45 * Math.sin(twoPi * (t * 2 + p.phase));
+        setMax(grid, x, y, clamp01(p.base * flick) * cornerBias(x, y));
+      }
+    }
+    return;
+  }
+
   throw new Error(`Unknown variant: ${variant}`);
+}
+
+const CACHE_SWARM = { flocks: null };
+
+function getSwarm() {
+  if (!CACHE_SWARM.flocks) {
+    const rand = mulberry32(0x5a12);
+    const flocks = [];
+    for (let i = 0; i < 5; i++) {
+      const members = [];
+      for (let j = 0; j < 16; j++) {
+        members.push({
+          dx: Math.floor(rand() * 7) - 3,
+          dy: Math.floor(rand() * 5) - 2,
+          base: 0.35 + rand() * 0.55,
+          phase: rand(),
+          wobble: 0.4 + rand() * 1.2,
+        });
+      }
+      flocks.push({
+        x: rand() * GRID_W,
+        y: rand() * GRID_H,
+        revsX: (1 + Math.floor(rand() * 2)) * (rand() < 0.5 ? 1 : -1),
+        revsY: (rand() < 0.5 ? 1 : -1),
+        members,
+      });
+    }
+    CACHE_SWARM.flocks = flocks;
+  }
+  return CACHE_SWARM.flocks;
 }
 
 /** Dense square tiles; luminance = “height” (block-piston reference). */
