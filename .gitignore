@@ -1,0 +1,6 @@
+frames/
+*.ppm
+.DS_Store
+node_modules/
+*_preview.jpg
+out/*.gif
