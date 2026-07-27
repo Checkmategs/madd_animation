@@ -77,12 +77,12 @@ export const VARIANT_META = {
   mosaic: { title: 'Mosaic', blurb: 'Tiled blocks with phased flash' },
   diamond: { title: 'Diamond', blurb: 'Expanding diamond rings' },
   swarm: { title: 'Swarm', blurb: 'Packed pixel flocks wrapping' },
-  sheen: { title: 'Sheen', blurb: 'Full field — soft diagonal sheen' },
-  fabric: { title: 'Fabric', blurb: 'Woven pixel cloth shimmer' },
-  fog: { title: 'Fog', blurb: 'Dense fog banks of pixels' },
-  plaid: { title: 'Plaid', blurb: 'Interference plaid over shimmer' },
-  grain: { title: 'Grain', blurb: 'Every pixel breathing grain' },
-  ember: { title: 'Ember', blurb: 'Hotspots in a living pixel bed' },
+  sheen: { title: 'Sheen', blurb: 'Sparse pixels — diagonal shimmer sweep' },
+  fabric: { title: 'Fabric', blurb: 'Sparse weave of flickering pixels' },
+  fog: { title: 'Fog', blurb: 'Soft pixel banks on black void' },
+  plaid: { title: 'Plaid', blurb: 'Sparse interference sparkles' },
+  grain: { title: 'Grain', blurb: 'Dense-ish dust grain twinkle' },
+  ember: { title: 'Ember', blurb: 'Hot pixel clusters on void' },
 };
 
 /** Mulberry32 */
@@ -934,94 +934,146 @@ export function paintFrame(variant, grid, tNorm) {
   }
 
   if (variant === 'sheen') {
-    paintDenseField(grid, t, (x, y, tt, tau) => {
-      const nx = x / (GRID_W - 1);
-      const ny = y / (GRID_H - 1);
-      const band = 0.5 + 0.5 * Math.sin(tau * (tt - nx * 0.85 + ny * 0.25));
-      return 0.22 + 0.55 * band * band;
-    });
+    // Sparse field; brightness biased by traveling diagonal band
+    const pts = getSparseField(0x5bee, 130);
+    for (const p of pts) {
+      const nx = p.x / (GRID_W - 1);
+      const ny = p.y / (GRID_H - 1);
+      const band = 0.5 + 0.5 * Math.sin(twoPi * (t - nx * 0.9 + ny * 0.2));
+      const flick = 0.5 + 0.5 * Math.sin(twoPi * (t + p.phase));
+      const bri = clamp01(p.base * flick * (0.35 + 0.65 * band) * cornerBias(p.x, p.y));
+      if (bri < 0.08) continue;
+      setMax(grid, p.x, p.y, bri);
+      if (p.buddy && bri > 0.35) {
+        setMax(grid, wrap(p.x + p.bx, GRID_W), wrap(p.y + p.by, GRID_H), bri * 0.55);
+      }
+    }
     return;
   }
 
   if (variant === 'fabric') {
-    paintDenseField(grid, t, (x, y, tt, tau) => {
-      const warp = 0.5 + 0.5 * Math.sin(tau * (x / 8 + tt));
-      const weft = 0.5 + 0.5 * Math.sin(tau * (y / 6 - tt));
-      const thread = (x + y) % 2 === 0 ? warp : weft;
-      return 0.2 + 0.5 * thread;
-    });
+    // Sparse pixels on a soft weave envelope (void stays black)
+    const pts = getSparseField(0xfab1, 140);
+    for (const p of pts) {
+      const warp = 0.5 + 0.5 * Math.sin(twoPi * (p.x / 10 + t));
+      const weft = 0.5 + 0.5 * Math.sin(twoPi * (p.y / 8 - t));
+      const weave = (p.x + p.y) % 2 === 0 ? warp : weft;
+      const flick = 0.55 + 0.45 * Math.sin(twoPi * (t + p.phase));
+      const bri = clamp01(p.base * flick * (0.4 + 0.6 * weave) * cornerBias(p.x, p.y));
+      if (bri < 0.1) continue;
+      setMax(grid, p.x, p.y, bri);
+    }
     return;
   }
 
   if (variant === 'fog') {
-    paintDenseField(grid, t, (x, y, tt, tau) => {
-      const nx = x / GRID_W;
-      const ny = y / GRID_H;
-      const a = 0.5 + 0.5 * Math.sin(tau * (nx * 2 + tt));
-      const b = 0.5 + 0.5 * Math.sin(tau * (ny * 2 - tt) + 1.1);
-      const c = 0.5 + 0.5 * Math.sin(tau * ((nx + ny) * 1.5 + tt * 2));
-      return 0.18 + 0.28 * a + 0.22 * b + 0.18 * c;
-    });
+    // Soft cloud masks over sparse dust — black elsewhere
+    const pts = getSparseField(0xf09, 160);
+    for (const p of pts) {
+      const nx = p.x / GRID_W;
+      const ny = p.y / GRID_H;
+      const cloud =
+        0.35 +
+        0.35 * Math.sin(twoPi * (nx * 2 + t)) +
+        0.3 * Math.sin(twoPi * (ny * 2 - t) + 1.2);
+      if (cloud < 0.45) continue;
+      const flick = 0.5 + 0.5 * Math.sin(twoPi * (t + p.phase));
+      const bri = clamp01(p.base * flick * cloud * cornerBias(p.x, p.y));
+      setMax(grid, p.x, p.y, bri);
+      if (p.buddy && cloud > 0.7) {
+        setMax(grid, wrap(p.x + p.bx, GRID_W), p.y, bri * 0.45);
+      }
+    }
     return;
   }
 
   if (variant === 'plaid') {
-    paintDenseField(grid, t, (x, y, tt, tau) => {
-      const vx = 0.5 + 0.5 * Math.sin(tau * (x / 12 + tt));
-      const hy = 0.5 + 0.5 * Math.sin(tau * (y / 10 - tt));
+    const pts = getSparseField(0x91ad, 120);
+    for (const p of pts) {
+      const vx = 0.5 + 0.5 * Math.sin(twoPi * (p.x / 14 + t));
+      const hy = 0.5 + 0.5 * Math.sin(twoPi * (p.y / 11 - t));
       const cross = vx * hy;
-      const stripe =
-        (Math.floor(x / 4) + Math.floor(y / 4)) % 2 === 0 ? 0.12 : 0;
-      return 0.2 + 0.45 * cross + stripe * (0.5 + 0.5 * Math.sin(tau * tt));
-    });
+      if (cross < 0.28) continue;
+      const flick = 0.55 + 0.45 * Math.sin(twoPi * (t * 2 + p.phase));
+      const bri = clamp01(p.base * flick * (0.45 + 0.55 * cross) * cornerBias(p.x, p.y));
+      setMax(grid, p.x, p.y, bri);
+    }
     return;
   }
 
   if (variant === 'grain') {
-    paintDenseField(grid, t, (x, y, tt, tau) => {
-      const phase = ((x * 12.9898 + y * 78.233) % 1 + 1) % 1;
-      const g1 = 0.5 + 0.5 * Math.sin(tau * (tt + phase));
-      const g2 = 0.5 + 0.5 * Math.sin(tau * (tt * 2 + phase * 3));
-      return 0.22 + 0.28 * g1 + 0.22 * g2;
-    });
+    // Slightly denser than dust — still mostly black void
+    const pts = getSparseField(0x91a1, 200);
+    for (const p of pts) {
+      const flick = 0.45 + 0.55 * Math.sin(twoPi * (t + p.phase));
+      const flick2 = 0.7 + 0.3 * Math.sin(twoPi * (t * 2 + p.phase * 2));
+      const bri = clamp01(p.base * p.twinkle * flick * flick2 * cornerBias(p.x, p.y));
+      if (bri < 0.06) continue;
+      setMax(grid, p.x, p.y, bri);
+    }
     return;
   }
 
   if (variant === 'ember') {
-    paintDenseField(grid, t, (x, y, tt, tau) => {
-      const nx = x / (GRID_W - 1);
-      const ny = y / (GRID_H - 1);
+    const pts = getSparseField(0xe6be, 150);
+    const clusters = [
+      { x: 0.22, y: 0.3 },
+      { x: 0.55, y: 0.45 },
+      { x: 0.78, y: 0.28 },
+      { x: 0.4, y: 0.72 },
+      { x: 0.68, y: 0.68 },
+    ];
+    for (const p of pts) {
+      const nx = p.x / (GRID_W - 1);
+      const ny = p.y / (GRID_H - 1);
       let hot = 0;
-      // soft hotspots (period-1)
-      for (let i = 0; i < 5; i++) {
-        const px = (0.15 + i * 0.17 + 0.08 * Math.sin(tau * (tt + i * 0.2))) % 1;
-        const py = (0.2 + ((i * 3) % 5) * 0.15 + 0.06 * Math.cos(tau * (tt + i * 0.13))) % 1;
+      for (let i = 0; i < clusters.length; i++) {
+        const c = clusters[i];
+        const px = wrap(c.x + 0.06 * Math.sin(twoPi * (t + i * 0.2)), 1);
+        const py = wrap(c.y + 0.05 * Math.cos(twoPi * (t + i * 0.17)), 1);
         const d = Math.hypot(nx - px, ny - py);
-        hot = Math.max(hot, Math.exp(-d * d * 28) * (0.55 + 0.45 * Math.sin(tau * (tt + i * 0.2))));
+        hot = Math.max(
+          hot,
+          Math.exp(-d * d * 22) * (0.5 + 0.5 * Math.sin(twoPi * (t + i * 0.2)))
+        );
       }
-      return 0.2 + 0.55 * hot;
-    });
+      if (hot < 0.12) continue;
+      const flick = 0.55 + 0.45 * Math.sin(twoPi * (t + p.phase));
+      const bri = clamp01(p.base * flick * (0.35 + 0.65 * hot) * cornerBias(p.x, p.y));
+      setMax(grid, p.x, p.y, bri);
+      if (p.buddy && hot > 0.55) {
+        setMax(grid, wrap(p.x + p.bx, GRID_W), wrap(p.y + p.by, GRID_H), bri * 0.5);
+      }
+    }
     return;
   }
 
   throw new Error(`Unknown variant: ${variant}`);
 }
 
-/**
- * Fill every cell — never pure black. Soft base shimmer + accent.
- * accentFn(x, y, t, twoPi) → brightness contribution 0..1
- */
-function paintDenseField(grid, t, accentFn) {
-  const twoPi = Math.PI * 2;
-  for (let y = 0; y < GRID_H; y++) {
-    for (let x = 0; x < GRID_W; x++) {
-      const phase = ((x * 0.07 + y * 0.11) % 1 + 1) % 1;
-      const shimmer =
-        0.12 + 0.1 * (0.5 + 0.5 * Math.sin(twoPi * (t + phase)));
-      const accent = accentFn(x, y, t, twoPi);
-      grid[y * GRID_W + x] = clamp01(Math.max(shimmer, accent));
+const CACHE_SPARSE = {};
+
+/** Sparse pixel set like the reference — black void between cells. */
+function getSparseField(seed, count) {
+  const key = `${seed}:${count}`;
+  if (!CACHE_SPARSE[key]) {
+    const rand = mulberry32(seed >>> 0);
+    const pts = [];
+    for (let i = 0; i < count; i++) {
+      pts.push({
+        x: Math.floor(rand() * GRID_W),
+        y: Math.floor(rand() * GRID_H),
+        base: 0.2 + rand() * 0.7,
+        phase: rand(),
+        twinkle: 0.4 + rand() * 0.55,
+        buddy: rand() < 0.2,
+        bx: rand() < 0.5 ? 1 : 0,
+        by: rand() < 0.5 ? 1 : 0,
+      });
     }
+    CACHE_SPARSE[key] = pts;
   }
+  return CACHE_SPARSE[key];
 }
 
 const CACHE_SWARM = { flocks: null };
