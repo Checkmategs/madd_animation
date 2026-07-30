@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Madd Animation — pixel cursor</title>
+    <style>
+      :root {
+        --bg: #050505;
+        --fg: #9a9a9a;
+        --hi: #d0d0d0;
+        --line: #1a1a1a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "IBM Plex Mono", "SF Mono", ui-monospace, monospace;
+        font-size: 13px;
+      }
+      .stage {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #000;
+        padding-bottom: 120px;
+      }
+      canvas {
+        width: min(100vw - 16px, calc((100vh - 140px) * 16 / 9));
+        aspect-ratio: 16 / 9;
+        height: auto;
+        max-height: calc(100vh - 140px);
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        background: #000;
+        cursor: crosshair;
+        touch-action: none;
+      }
+      .bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        padding: 12px 16px;
+        background: linear-gradient(transparent, rgba(0, 0, 0, 0.92));
+        border-top: 1px solid var(--line);
+      }
+      .bar .meta {
+        flex: 1 1 100%;
+        order: -1;
+        margin-bottom: 4px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .bar .blurb {
+        opacity: 0.7;
+        flex: 1 1 160px;
+      }
+      button {
+        appearance: none;
+        border: 1px solid #2a2a2a;
+        background: #111;
+        color: var(--fg);
+        padding: 8px 12px;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:hover,
+      button.active {
+        border-color: #555;
+        color: var(--hi);
+        background: #181818;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <canvas id="c" width="1920" height="1080"></canvas>
+    </div>
+    <div class="bar" id="bar"></div>
+    <script type="module">
+      import {
+        VARIANT_IDS,
+        VARIANT_META,
+        GRID_W,
+        GRID_H,
+        OUT_W,
+        OUT_H,
+        createState,
+        resetState,
+        step,
+        paint,
+        gridToRgb,
+        upscaleNearest,
+      } from "./engine.js";
+
+      const canvas = document.getElementById("c");
+      const ctx = canvas.getContext("2d", { alpha: false });
+      const img = ctx.createImageData(OUT_W, OUT_H);
+      const grid = new Float32Array(GRID_W * GRID_H);
+      const rgb = new Uint8ClampedArray(GRID_W * GRID_H * 3);
+
+      const params = new URLSearchParams(location.search);
+      let variant = params.get("v") || VARIANT_IDS[0];
+      if (!VARIANT_IDS.includes(variant)) variant = VARIANT_IDS[0];
+
+      const state = createState(variant);
+      const pointer = { x: GRID_W / 2, y: GRID_H / 2, active: false };
+
+      const bar = document.getElementById("bar");
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const blurb = document.createElement("span");
+      blurb.className = "blurb";
+      meta.appendChild(blurb);
+      bar.appendChild(meta);
+
+      for (const id of VARIANT_IDS) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = VARIANT_META[id].title;
+        b.dataset.id = id;
+        b.addEventListener("click", () => {
+          variant = id;
+          resetState(state, variant);
+          syncUrl();
+          syncButtons();
+        });
+        bar.appendChild(b);
+      }
+
+      function syncUrl() {
+        history.replaceState(null, "", `?v=${variant}`);
+      }
+
+      function syncButtons() {
+        for (const b of bar.querySelectorAll("button[data-id]")) {
+          b.classList.toggle("active", b.dataset.id === variant);
+        }
+        blurb.textContent = VARIANT_META[variant].blurb;
+      }
+      syncButtons();
+
+      function clientToGrid(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const x = ((clientX - rect.left) / rect.width) * GRID_W;
+        const y = ((clientY - rect.top) / rect.height) * GRID_H;
+        return {
+          x: Math.max(0, Math.min(GRID_W - 1, x)),
+          y: Math.max(0, Math.min(GRID_H - 1, y)),
+        };
+      }
+
+      canvas.addEventListener("pointerenter", (e) => {
+        const g = clientToGrid(e.clientX, e.clientY);
+        pointer.x = g.x;
+        pointer.y = g.y;
+        pointer.active = true;
+        canvas.setPointerCapture?.(e.pointerId);
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        const g = clientToGrid(e.clientX, e.clientY);
+        pointer.x = g.x;
+        pointer.y = g.y;
+        pointer.active = true;
+      });
+      canvas.addEventListener("pointerleave", () => {
+        pointer.active = false;
+      });
+      canvas.addEventListener("pointerdown", (e) => {
+        const g = clientToGrid(e.clientX, e.clientY);
+        pointer.x = g.x;
+        pointer.y = g.y;
+        pointer.active = true;
+      });
+
+      let last = performance.now();
+      const t0 = last;
+
+      function frame(now) {
+        const dt = (now - last) / 1000;
+        last = now;
+        const timeSec = (now - t0) / 1000;
+        step(state, pointer, dt, timeSec);
+        paint(state, grid, pointer, timeSec);
+        gridToRgb(grid, rgb);
+        upscaleNearest(rgb, img.data);
+        ctx.putImageData(img, 0, 0);
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>
