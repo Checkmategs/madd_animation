@@ -29,13 +29,13 @@
         display: grid;
         place-items: center;
         background: #000;
-        padding-bottom: 120px;
+        padding-bottom: 150px;
       }
       canvas {
-        width: min(100vw - 16px, calc((100vh - 140px) * 16 / 9));
+        width: min(100vw - 16px, calc((100vh - 170px) * 16 / 9));
         aspect-ratio: 16 / 9;
         height: auto;
-        max-height: calc(100vh - 140px);
+        max-height: calc(100vh - 170px);
         image-rendering: pixelated;
         image-rendering: crisp-edges;
         background: #000;
@@ -54,6 +54,8 @@
         padding: 12px 16px;
         background: linear-gradient(transparent, rgba(0, 0, 0, 0.92));
         border-top: 1px solid var(--line);
+        max-height: 42%;
+        overflow: auto;
       }
       .bar .meta {
         flex: 1 1 100%;
@@ -68,6 +70,32 @@
       .bar .blurb {
         opacity: 0.7;
         flex: 1 1 160px;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .knob {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #2a2a2a;
+        background: #0c0c0c;
+        padding: 6px 10px;
+      }
+      .knob label {
+        opacity: 0.7;
+        white-space: nowrap;
+      }
+      .knob input[type="range"] {
+        width: 90px;
+        accent-color: #888;
+      }
+      .knob .val {
+        min-width: 2em;
+        color: var(--hi);
       }
       button {
         appearance: none;
@@ -99,13 +127,14 @@
         GRID_H,
         OUT_W,
         OUT_H,
+        DEFAULT_OPTS,
         createState,
         resetState,
         step,
         paint,
         gridToRgb,
         upscaleNearest,
-      } from "./engine.js";
+      } from "./engine.js?v=20260730b";
 
       const canvas = document.getElementById("c");
       const ctx = canvas.getContext("2d", { alpha: false });
@@ -117,6 +146,18 @@
       let variant = params.get("v") || VARIANT_IDS[0];
       if (!VARIANT_IDS.includes(variant)) variant = VARIANT_IDS[0];
 
+      const opts = {
+        tip: Number(params.get("tip") || DEFAULT_OPTS.tip),
+        pull: Number(params.get("pull") || DEFAULT_OPTS.pull),
+        snap: Number(params.get("snap") || DEFAULT_OPTS.snap),
+      };
+      if (!Number.isFinite(opts.tip)) opts.tip = DEFAULT_OPTS.tip;
+      if (!Number.isFinite(opts.pull)) opts.pull = DEFAULT_OPTS.pull;
+      if (!Number.isFinite(opts.snap)) opts.snap = DEFAULT_OPTS.snap;
+      opts.tip = Math.min(8, Math.max(1, opts.tip));
+      opts.pull = Math.min(2, Math.max(0.35, opts.pull));
+      opts.snap = Math.min(2, Math.max(0.35, opts.snap));
+
       const state = createState(variant);
       const pointer = { x: GRID_W / 2, y: GRID_H / 2, active: false };
 
@@ -125,7 +166,34 @@
       meta.className = "meta";
       const blurb = document.createElement("span");
       blurb.className = "blurb";
-      meta.appendChild(blurb);
+
+      const controls = document.createElement("div");
+      controls.className = "controls";
+
+      function makeKnob(id, label, min, max, step, value) {
+        const box = document.createElement("div");
+        box.className = "knob";
+        const lab = document.createElement("label");
+        lab.textContent = label;
+        lab.htmlFor = id;
+        const input = document.createElement("input");
+        input.id = id;
+        input.type = "range";
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = String(value);
+        const val = document.createElement("span");
+        val.className = "val";
+        box.append(lab, input, val);
+        return { box, input, val };
+      }
+
+      const tipK = makeKnob("tip", "Tip", 1, 8, 1, opts.tip);
+      const pullK = makeKnob("pull", "Pull", 0.35, 2, 0.05, opts.pull);
+      const snapK = makeKnob("snap", "Snap", 0.35, 2, 0.05, opts.snap);
+      controls.append(tipK.box, pullK.box, snapK.box);
+      meta.append(blurb, controls);
       bar.appendChild(meta);
 
       for (const id of VARIANT_IDS) {
@@ -142,8 +210,17 @@
         bar.appendChild(b);
       }
 
+      function fmt(n) {
+        return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+      }
+
       function syncUrl() {
-        history.replaceState(null, "", `?v=${variant}`);
+        const q = new URLSearchParams();
+        q.set("v", variant);
+        if (opts.tip !== DEFAULT_OPTS.tip) q.set("tip", String(opts.tip));
+        if (opts.pull !== DEFAULT_OPTS.pull) q.set("pull", String(opts.pull));
+        if (opts.snap !== DEFAULT_OPTS.snap) q.set("snap", String(opts.snap));
+        history.replaceState(null, "", `?${q}`);
       }
 
       function syncButtons() {
@@ -151,8 +228,27 @@
           b.classList.toggle("active", b.dataset.id === variant);
         }
         blurb.textContent = VARIANT_META[variant].blurb;
+        tipK.val.textContent = fmt(opts.tip);
+        pullK.val.textContent = fmt(opts.pull);
+        snapK.val.textContent = fmt(opts.snap);
       }
       syncButtons();
+
+      tipK.input.addEventListener("input", () => {
+        opts.tip = Number(tipK.input.value);
+        syncUrl();
+        syncButtons();
+      });
+      pullK.input.addEventListener("input", () => {
+        opts.pull = Number(pullK.input.value);
+        syncUrl();
+        syncButtons();
+      });
+      snapK.input.addEventListener("input", () => {
+        opts.snap = Number(snapK.input.value);
+        syncUrl();
+        syncButtons();
+      });
 
       function clientToGrid(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
@@ -169,7 +265,6 @@
         pointer.x = g.x;
         pointer.y = g.y;
         pointer.active = true;
-        canvas.setPointerCapture?.(e.pointerId);
       });
       canvas.addEventListener("pointermove", (e) => {
         const g = clientToGrid(e.clientX, e.clientY);
@@ -194,7 +289,7 @@
         const dt = (now - last) / 1000;
         last = now;
         const timeSec = (now - t0) / 1000;
-        step(state, pointer, dt, timeSec);
+        step(state, pointer, dt, timeSec, opts);
         paint(state, grid, pointer, timeSec);
         gridToRgb(grid, rgb);
         upscaleNearest(rgb, img.data);
