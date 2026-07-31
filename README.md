@@ -6,6 +6,7 @@ Pixel ambient FHD loops — grayscale, **square pixels**, seamless previews.
 
 - Ambient: https://checkmategs.github.io/madd_animation/
 - Cursor interactive: https://checkmategs.github.io/madd_animation/cursor/
+- Games: https://checkmategs.github.io/madd_animation/games/
 
 ## Controls
 

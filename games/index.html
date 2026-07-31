@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Madd Animation — pixel games</title>
+    <style>
+      :root {
+        --bg: #050505;
+        --fg: #9a9a9a;
+        --hi: #d0d0d0;
+        --line: #1a1a1a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "IBM Plex Mono", "SF Mono", ui-monospace, monospace;
+        font-size: 13px;
+      }
+      .stage {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #000;
+        padding-bottom: 150px;
+      }
+      canvas {
+        width: min(100vw - 16px, calc((100vh - 170px) * 16 / 9));
+        aspect-ratio: 16 / 9;
+        height: auto;
+        max-height: calc(100vh - 170px);
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        background: #000;
+        cursor: default;
+        touch-action: none;
+        outline: none;
+      }
+      .bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        padding: 12px 16px;
+        background: linear-gradient(transparent, rgba(0, 0, 0, 0.92));
+        border-top: 1px solid var(--line);
+        max-height: 42%;
+        overflow: auto;
+      }
+      .bar .meta {
+        flex: 1 1 100%;
+        order: -1;
+        margin-bottom: 4px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .bar .blurb {
+        opacity: 0.7;
+        flex: 1 1 120px;
+      }
+      button {
+        appearance: none;
+        border: 1px solid #2a2a2a;
+        background: #111;
+        color: var(--fg);
+        padding: 8px 12px;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:hover,
+      button.active {
+        border-color: #555;
+        color: var(--hi);
+        background: #181818;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <canvas id="c" width="1920" height="1080"></canvas>
+    </div>
+    <div class="bar" id="bar"></div>
+    <script type="module">
+      import { startShell } from "./shell.js";
+      import { createSpace } from "./games/space.js";
+      import { createTetris } from "./games/tetris.js";
+      import { createBreakout } from "./games/breakout.js";
+
+      startShell({
+        canvas: document.getElementById("c"),
+        bar: document.getElementById("bar"),
+        games: [createSpace(), createTetris(), createBreakout()],
+        defaultId: "space",
+      });
+    </script>
+  </body>
+</html>
